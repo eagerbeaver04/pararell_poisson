@@ -1,0 +1,16 @@
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+BreakBeforeBraces: Allman
+
+PointerAlignment: Left
+
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: Never
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+SortIncludes: true

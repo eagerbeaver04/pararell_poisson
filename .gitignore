@@ -1,0 +1,50 @@
+# Compiled binaries
+*.exe
+*.out
+*.bin
+
+# Object files
+*.o
+*.obj
+
+# Libraries
+*.a
+*.lib
+*.so
+*.dll
+
+# Debugging files
+*.dbg
+*.dwo
+*.elf
+
+# Temporary files
+*~
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# Build system specific files (e.g., Makefiles, CMake)
+Makefile.bak
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+
+# Editor/IDE specific files
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# User-specific files
+*.user
+
+# .clang-format
+.vscode
+.cache
+build
