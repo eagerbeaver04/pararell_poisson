@@ -557,3 +557,42 @@ double vectors_max_diff(Vector* left, Vector* right)
 //     }
 //     return A;
 // }
+
+void save_matrix_market(Matrix* A, const char* filename)
+{
+    FILE* f = fopen(filename, "w");
+    if(f == NULL)
+    {
+        perror("Failed to open file for writing");
+        return;
+    }
+
+    // Count nonzeros
+    size_t nnz = 0;
+    for(size_t i = 0; i < A->rows; i++)
+    {
+        for(size_t j = 0; j < A->cols; j++)
+        {
+            if(A->data[i][j] != 0.0)
+            {
+                nnz++;
+            }
+        }
+    }
+
+    fprintf(f, "%%%%MatrixMarket matrix coordinate real general\n");
+    fprintf(f, "%zu %zu %zu\n", A->rows, A->cols, nnz);
+
+    for(size_t i = 0; i < A->rows; i++)
+    {
+        for(size_t j = 0; j < A->cols; j++)
+        {
+            if(A->data[i][j] != 0.0)
+            {
+                fprintf(f, "%zu %zu %.15g\n", i + 1, j + 1, A->data[i][j]);
+            }
+        }
+    }
+
+    fclose(f);
+}

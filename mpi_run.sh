@@ -1,0 +1,1 @@
+mpiexec -n 4 ./build/main_executable_mpi
