@@ -32,6 +32,14 @@ add_executable(main_executable_mpi src/mpi_main.c)
 target_link_libraries(main_executable_mpi PRIVATE MPI::MPI_C -lm)
 target_compile_options(main_executable_mpi PRIVATE ${COMMON_COMPILE_OPTIONS})
 
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+
 add_executable(main_executable_posix src/posix_main.c)
-target_link_libraries(main_executable_posix PRIVATE m)
+target_link_libraries(main_executable_posix PRIVATE 
+    m
+    pthread 
+    Threads::Threads
+    ${CMAKE_THREAD_LIBS_INIT}
+)
 target_compile_options(main_executable_posix PRIVATE ${COMMON_COMPILE_OPTIONS})

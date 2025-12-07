@@ -1,1 +1,3 @@
-time; ./build/main_executable
+#!/bin/bash
+
+time ./build/main_executable

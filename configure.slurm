@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=spline_all
-#SBATCH --output=report_4.out
+#SBATCH --job-name=poisson
+#SBATCH --output=poisson.out
 #SBATCH --nodes=2
 #SBATCH --cpus-per-task=1
 #SBATCH --time=01:00:00
@@ -9,9 +9,7 @@
 module purge
 module load mpi/openmpi/4.1.6/gcc/11
 PYTHON_BIN=/opt/software/python/3.11.8/bin/python3
-module load cmake/3.28.3
-module load make/4.4.1
-
+module load dev/cmake/3.23.1
 THREADS=(2 4 8 16 48)
 PROCS=(2 4 16 28)
 
@@ -24,11 +22,7 @@ echo "Tasks Allocated   = $SLURM_NTASKS"
 echo "CPUs per Task     = $SLURM_CPUS_PER_TASK"
 echo "==================="
 
-# ----------------------------
-# Clone sources
-# ----------------------------
-git clone https://github.com/eagerbeaver04/pararell_poisson.git 
-cd pararell_poisson
+# cd pararell_poisson
 
 # ----------------------------
 # Compile all programs
@@ -43,7 +37,7 @@ echo
 echo "=== RUN pthreads ==="
 for t in "${THREADS[@]}"; do
   echo "Threads = $t"
-  bash posix_run.sh t
+  bash posix_run.sh $t
 done
 
 # ----------------------------
@@ -53,7 +47,7 @@ echo
 echo "=== RUN OpenMP ==="
 for t in "${THREADS[@]}"; do
   echo "Threads = $t"
-  bash openmp_run.sh t
+  bash openmp_run.sh $t
 done
 
 # ----------------------------
@@ -63,7 +57,7 @@ echo
 echo "=== RUN MPI C ==="
 for p in "${PROCS[@]}"; do
   echo "Procs = $p"
-  bash mpi_run.sh p
+  bash mpi_run.sh $p
 done
 
 # ----------------------------
@@ -73,5 +67,5 @@ echo
 echo "=== RUN MPI Python ==="
 for p in "${PROCS[@]}"; do
   echo "Procs = $p"
-  bash pu_mpi_run.sh p
+  bash py_mpi_run.sh $p
 done
