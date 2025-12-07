@@ -1,7 +1,11 @@
+#ifndef MATRIX_HEADER
+#define MATRIX_HEADER
+
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Структура для хранения матрицы
 // typedef struct
@@ -558,7 +562,25 @@ double vectors_max_diff(Vector* left, Vector* right)
 //     return A;
 // }
 
-void save_matrix_market(Matrix* A, const char* filename)
+char* create_filename(const char* prefix, int number)
+{
+    // Allocate memory for the filename
+    // Format: prefix_number.ext (e.g., "file_001.txt")
+    char* filename =
+        malloc(strlen(prefix) + 15); // Extra space for number and extension
+
+    if(filename == NULL)
+    {
+        return NULL; // Memory allocation failed
+    }
+
+    // Create the filename
+    sprintf(filename, "%s_%03d.txt", prefix, number);
+
+    return filename;
+}
+
+void save_matrix_market(Matrix* A, const char* filename, double* check_sum)
 {
     FILE* f = fopen(filename, "w");
     if(f == NULL)
@@ -583,16 +605,26 @@ void save_matrix_market(Matrix* A, const char* filename)
     fprintf(f, "%%%%MatrixMarket matrix coordinate real general\n");
     fprintf(f, "%zu %zu %zu\n", A->rows, A->cols, nnz);
 
+    double sum = 0;
+
     for(size_t i = 0; i < A->rows; i++)
     {
         for(size_t j = 0; j < A->cols; j++)
         {
             if(A->data[i][j] != 0.0)
             {
+                sum += A->data[i][j];
                 fprintf(f, "%zu %zu %.15g\n", i + 1, j + 1, A->data[i][j]);
             }
         }
     }
 
     fclose(f);
+
+    if(check_sum != NULL)
+    {
+        *check_sum = sum;
+    }
 }
+
+#endif

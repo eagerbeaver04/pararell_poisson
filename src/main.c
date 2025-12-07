@@ -55,6 +55,7 @@ Matrix cholesky(Matrix* A, int n)
             s += L.data[j][k] * L.data[j][k];
         }
         L.data[j][j] = sqrt(A->data[j][j] - s);
+        printf("index: %i", j);
         for(int i = j + 1; i < n; i++)
         {
             double s = 0;

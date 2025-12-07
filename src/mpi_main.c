@@ -1,3 +1,4 @@
+#include "matrix/matrix.h"
 #include "utils/utils.h"
 #include <assert.h>
 #include <mpi.h>
@@ -11,93 +12,80 @@ typedef struct
     size_t cols;
     double** data;
     double* buf;
-    MPI_Win win_data; // MPI window for data pointers
-    MPI_Win win_buf;  // MPI window for buffer
+    MPI_Win win_buf; // MPI window for buffer
 } Matrix_MPI;
 
 static Matrix_MPI create_shared_matrix(size_t rows, size_t cols, MPI_Comm comm)
 {
-    Matrix_MPI m = {rows, cols, NULL, NULL, MPI_WIN_NULL, MPI_WIN_NULL};
+    Matrix_MPI m;
     int rank, size;
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &size);
 
-    // Check for overflow
-    size_t total;
-    if(mul_overflow_size_t(rows, cols, &total))
+    m.rows = rows;
+    m.cols = cols;
+    m.data = NULL;
+    m.buf = NULL;
+    m.win_buf = MPI_WIN_NULL;
+
+    size_t total = rows * cols;
+    MPI_Aint buf_size = total * sizeof(double);
+
+    // Allocate shared memory window
+    MPI_Win_allocate_shared(buf_size, sizeof(double), MPI_INFO_NULL, comm,
+                            &m.buf, &m.win_buf);
+
+    // Get the base address of rank 0's window
+    MPI_Aint sz;
+    int disp;
+    double* base_ptr;
+
+    // Query rank 0's address to use as the common base
+    MPI_Win_shared_query(m.win_buf, 0, &sz, &disp, &base_ptr);
+
+    // Use the common base pointer for all processes
+    double* common_buf = base_ptr;
+
+    // Allocate local row pointers
+    m.data = (double**)malloc(rows * sizeof(double*));
+
+    // Set up row pointers using the COMMON base address
+    for(size_t i = 0; i < rows; i++)
     {
-        if(rank == 0)
-        {
-            fprintf(stderr, "Matrix size too large (overflow).\n");
-        }
-        MPI_Abort(comm, EXIT_FAILURE);
+        m.data[i] = common_buf + i * cols;
     }
 
-    // Create shared memory for the buffer (actual matrix data)
-    MPI_Aint buf_size = total * sizeof(double);
-    double* shared_buf = NULL;
-    MPI_Win_allocate_shared(buf_size, sizeof(double), MPI_INFO_NULL, comm,
-                            &shared_buf, &m.win_buf);
-
-    // Create shared memory for data pointers
-    MPI_Aint data_size = rows * sizeof(double*);
-    double** shared_data = NULL;
-    MPI_Win_allocate_shared(data_size, sizeof(double*), MPI_INFO_NULL, comm,
-                            (void**)&shared_data, &m.win_data);
-
-    // Synchronize before initialization
+    // Initialize only once (by rank 0)
     MPI_Win_fence(0, m.win_buf);
-    MPI_Win_fence(0, m.win_data);
-
-    // CRITICAL FIX: Only rank 0 should initialize the row pointers
-    // Row pointers must be set consistently across all processes
     if(rank == 0)
     {
-        // Initialize buffer to zero
-        for(size_t i = 0; i < total; ++i)
+        for(size_t i = 0; i < total; i++)
         {
-            shared_buf[i] = 0.0;
-        }
-
-        // Initialize ALL row pointers (not just a subset)
-        for(size_t i = 0; i < rows; ++i)
-        {
-            shared_data[i] = shared_buf + i * cols;
+            common_buf[i] = 0.0;
         }
     }
-
-    // Synchronize after initialization
     MPI_Win_fence(0, m.win_buf);
-    MPI_Win_fence(0, m.win_data);
 
-    // Get local pointers to shared memory
-    MPI_Aint data_win_size;
-    int data_win_disp_unit;
-    MPI_Win_shared_query(m.win_data, 0, &data_win_size, &data_win_disp_unit,
-                         (void**)&m.data);
-
-    MPI_Aint buf_win_size;
-    int buf_win_disp_unit;
-    MPI_Win_shared_query(m.win_buf, 0, &buf_win_size, &buf_win_disp_unit,
-                         &m.buf);
-
-    MPI_Win_fence(0, m.win_buf);
-    MPI_Win_fence(0, m.win_data);
     return m;
 }
-
-static void free_shared_matrix(Matrix_MPI* m)
+// Function to free shared matrix
+static void free_shared_matrix(Matrix_MPI* mat, MPI_Comm comm)
 {
-    if(m->win_data != MPI_WIN_NULL)
+    if(mat->data)
     {
-        MPI_Win_free(&m->win_data);
+        free(mat->data);
+        mat->data = NULL;
     }
-    if(m->win_buf != MPI_WIN_NULL)
+
+    if(mat->win_buf != MPI_WIN_NULL)
     {
-        MPI_Win_free(&m->win_buf);
+        MPI_Win_fence(0, mat->win_buf);
+        MPI_Win_free(&mat->win_buf);
     }
-    m->data = NULL;
-    m->buf = NULL;
+
+    mat->buf = NULL;
+    mat->rows = 0;
+    mat->cols = 0;
 }
 
 Matrix_MPI generate_five_diag_mpi(size_t xn, size_t yn, MPI_Comm comm)
@@ -120,7 +108,6 @@ Matrix_MPI generate_five_diag_mpi(size_t xn, size_t yn, MPI_Comm comm)
     Matrix_MPI A = create_shared_matrix(n, n, comm);
 
     MPI_Win_fence(0, A.win_buf);
-    MPI_Win_fence(0, A.win_data);
 
     // Distribute rows among processes
     size_t rows_per_proc = n / size;
@@ -131,36 +118,61 @@ Matrix_MPI generate_five_diag_mpi(size_t xn, size_t yn, MPI_Comm comm)
     size_t end_row = start_row + rows_per_proc + (rank < remainder ? 1 : 0);
 
     // Each process fills its assigned rows
+    // for(size_t i = start_row; i < end_row; ++i)
+    // {
+    //     // центр
+    //     A.data[i][i] = -4.0;
+
+    //     // вверх (i - xn)
+    //     if(i >= xn)
+    //     {
+    //         A.data[i][i - xn] = 1.0;
+    //     }
+    //     // вниз (i + xn)
+    //     if(i + xn < n)
+    //     {
+    //         A.data[i][i + xn] = 1.0;
+    //     }
+    //     // влево (i - 1) — не на левом краю строки
+    //     if((i % xn) != 0)
+    //     {
+    //         A.data[i][i - 1] = 1.0;
+    //     }
+    //     // вправо (i + 1) — не на правом краю строки
+    //     if((i % xn) != xn - 1)
+    //     {
+    //         A.data[i][i + 1] = 1.0;
+    //     }
+    // }
     for(size_t i = start_row; i < end_row; ++i)
     {
         // центр
-        A.data[i][i] = -4.0;
+        A.data[i][i] = 4.0;
 
         // вверх (i - xn)
         if(i >= xn)
         {
-            A.data[i][i - xn] = 1.0;
+            A.data[i][i - xn] = -1.0;
         }
         // вниз (i + xn)
         if(i + xn < n)
         {
-            A.data[i][i + xn] = 1.0;
+            A.data[i][i + xn] = -1.0;
         }
         // влево (i - 1) — не на левом краю строки
         if((i % xn) != 0)
         {
-            A.data[i][i - 1] = 1.0;
+            A.data[i][i - 1] = -1.0;
         }
         // вправо (i + 1) — не на правом краю строки
         if((i % xn) != xn - 1)
         {
-            A.data[i][i + 1] = 1.0;
+            A.data[i][i + 1] = -1.0;
         }
     }
 
     // Synchronize to ensure all processes have finished writing
     MPI_Win_fence(0, A.win_buf);
-    MPI_Win_fence(0, A.win_data);
 
     printf("process with rank: %i ended matrix creation", rank);
     return A;
@@ -172,57 +184,109 @@ Matrix_MPI cholesky_mpi(Matrix_MPI* A, int n, MPI_Comm comm)
     MPI_Comm_rank(comm, &rank);
     MPI_Comm_size(comm, &size);
 
-    // Create shared matrix for L
-    Matrix_MPI L = create_shared_matrix(n, n, comm);
-
-    MPI_Win_fence(0, L.win_buf);
-    MPI_Win_fence(0, L.win_data);
-
-    // Verify matrix dimensions (only rank 0 needs to check)
+    // Verify matrix dimensions
     if(rank == 0)
     {
         assert(A->cols == A->rows);
         assert(A->cols == n);
     }
-    MPI_Win_fence(0, L.win_buf); // Ensure all processes see the assertions
+
+    const char* filename = create_filename("mpi_matrix_a", rank);
+    double sum = 0;
+    Matrix A_d = {A->rows, A->cols, A->data, A->buf};
+    save_matrix_market(&A_d, filename, &sum);
+    printf("rank = %i, check sum = %f", rank, sum);
+
+    // Broadcast assertion result to all processes
+    int ok = 1;
+    MPI_Bcast(&ok, 1, MPI_INT, 0, comm);
+    if(!ok)
+    {
+        MPI_Abort(comm, EXIT_FAILURE);
+    }
+
+    // Create shared matrix for L
+    Matrix_MPI L = create_shared_matrix(n, n, comm);
+
+    // Ensure A is also synchronized if it's shared
+    if(A->win_buf != MPI_WIN_NULL)
+    {
+        MPI_Win_fence(0, A->win_buf);
+    }
 
     for(int j = 0; j < n; j++)
     {
+        // Synchronize before column computation
+        MPI_Win_fence(0, L.win_buf);
+
         // Process 0 computes the diagonal element
         if(rank == 0)
         {
-            double s = 0;
+            double s = 0.0;
             for(int k = 0; k < j; k++)
             {
                 s += L.data[j][k] * L.data[j][k];
             }
             L.data[j][j] = sqrt(A->data[j][j] - s);
+
+            MPI_Win_sync(L.win_buf);
         }
 
-        // Synchronize to ensure L[j][j] is computed before others use it
+        MPI_Barrier(comm);
+
+        // CRITICAL: Force memory consistency across all processes
+        MPI_Win_fence(MPI_MODE_NOPUT | MPI_MODE_NOPRECEDE, L.win_buf);
+
+        // Synchronize to ensure L[j][j] is visible to all
         MPI_Win_fence(0, L.win_buf);
+
+        // All processes need the diagonal value for computations below
+        // Broadcast L[j][j] to ensure all have it (though shared memory should
+        // provide it) But we need to ensure memory consistency:
+        double diag_val = L.data[j][j];
 
         // Parallelize the i-loop across processes
-        int chunk_size = (n - j - 1) / size;
-        int remainder = (n - j - 1) % size;
-
-        int start_i =
-            j + 1 + rank * chunk_size + (rank < remainder ? rank : remainder);
-        int end_i = start_i + chunk_size + (rank < remainder ? 1 : 0);
-
-        for(int i = start_i; i < end_i && i < n; i++)
+        int remaining_rows = n - j - 1;
+        if(remaining_rows > 0)
         {
-            double s = 0;
-            for(int k = 0; k < j; k++)
+            int chunk_size = remaining_rows / size;
+            int remainder = remaining_rows % size;
+
+            int local_start = j + 1;
+            int local_count = chunk_size + (rank < remainder ? 1 : 0);
+
+            // Calculate global start for each process
+            int offset = 0;
+            for(int p = 0; p < rank; p++)
             {
-                s += L.data[i][k] * L.data[j][k];
+                offset += chunk_size + (p < remainder ? 1 : 0);
             }
-            L.data[i][j] = (1.0 / L.data[j][j] * (A->data[i][j] - s));
+            local_start += offset;
+
+            // Each process computes its assigned rows
+            for(int i = local_start; i < local_start + local_count; i++)
+            {
+                double s = 0.0;
+                for(int k = 0; k < j; k++)
+                {
+                    s += L.data[i][k] * L.data[j][k];
+                }
+                L.data[i][j] = (A->data[i][j] - s) / diag_val;
+            }
         }
 
-        // Synchronize after each column to ensure dependencies are met
+        // Synchronize after column completion
         MPI_Win_fence(0, L.win_buf);
     }
+
+    // Final synchronization
+    MPI_Win_fence(0, L.win_buf);
+
+    const char* filename2 = create_filename("mpi_matrix_l", rank);
+    double sum2 = 0;
+    Matrix L_d = {L.rows, L.cols, L.data, L.buf};
+    save_matrix_market(&L_d, filename2, &sum2);
+    printf("rank = %i, check sum = %f", rank, sum2);
 
     return L;
 }
@@ -367,7 +431,8 @@ Vector pcgPreconditioned(Matrix* A, Vector* b, Vector* xs, double err,
     return x;
 }
 
-void errByEpsPcgChol(double a, double b, double c, double d, double h)
+void errByEpsPcgChol(double a, double b, double c, double d, double h,
+                     MPI_Comm comm)
 {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -388,7 +453,7 @@ void errByEpsPcgChol(double a, double b, double c, double d, double h)
         int n = (x.size - 2) * (y.size - 2);
 
         printf("%zu, %zu, %i, %i, %i", A.cols, A.rows, B.size, x.size, y.size);
-        scalar_mul_self(A, -1);
+        // scalar_mul_self(A, -1);
 
         scalar_vector_mult_self(&B, -1);
 
@@ -430,8 +495,8 @@ void errByEpsPcgChol(double a, double b, double c, double d, double h)
     }
     free_vector(x);
     free_vector(y);
-    free_shared_matrix(&A_MPI);
-    free_shared_matrix(&L_MPI);
+    free_shared_matrix(&A_MPI, comm);
+    free_shared_matrix(&L_MPI, comm);
     if(rank == 0)
     {
         printf("---\n");
@@ -460,7 +525,7 @@ int main(int argc, char** argv)
     // printf("----------------------------------------------------\n");
     MPI_Barrier(MPI_COMM_WORLD);
 
-    errByEpsPcgChol(a, b, c, d, h);
+    errByEpsPcgChol(a, b, c, d, h, MPI_COMM_WORLD);
 
     MPI_Finalize();
 

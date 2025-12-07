@@ -31,3 +31,7 @@ find_package(MPI REQUIRED)
 add_executable(main_executable_mpi src/mpi_main.c)
 target_link_libraries(main_executable_mpi PRIVATE MPI::MPI_C -lm)
 target_compile_options(main_executable_mpi PRIVATE ${COMMON_COMPILE_OPTIONS})
+
+add_executable(main_executable_posix src/posix_main.c)
+target_link_libraries(main_executable_posix PRIVATE m)
+target_compile_options(main_executable_posix PRIVATE ${COMMON_COMPILE_OPTIONS})

@@ -1,7 +1,40 @@
 #include "utils/utils.h"
 #include <assert.h>
 #include <omp.h>
+#include <pthread.h>
 #include <stdio.h>
+
+typedef struct
+{
+    int j;
+    Matrix* L;
+    Matrix* A;
+    int start_i;
+    int end_i;
+} thread_data;
+
+void* compute_column(void* arg)
+{
+    thread_data* data = (thread_data*)arg;
+    int j = data->j;
+    Matrix* L = data->L;
+    Matrix* A = data->A;
+
+    for(int i = data->start_i; i < data->end_i; i++)
+    {
+        double s = 0.0;
+        for(int k = 0; k < j; k++)
+        {
+            s += L->data[i][k] * L->data[j][k];
+        }
+        L->data[i][j] = (1.0 / L->data[j][j]) * (A->data[i][j] - s);
+    }
+    pthread_exit(NULL);
+}
+
+const int NUM_THREADS = 4; // Adjust based on your system
+pthread_t threads[NUM_THREADS];
+thread_data thread_args[NUM_THREADS];
 
 static Matrix create_matrix_openmp(size_t rows, size_t cols)
 {
@@ -26,7 +59,7 @@ static Matrix create_matrix_openmp(size_t rows, size_t cols)
         die("calloc buf");
     }
 
-#pragma omp parallel for
+    // #pragma omp parallel for
     for(size_t i = 0; i < rows; ++i)
     {
         m.data[i] = m.buf + i * cols;
@@ -44,10 +77,20 @@ Matrix generate_five_diag(size_t xn, size_t yn)
         exit(EXIT_FAILURE);
     }
 
-    Matrix A = create_matrix_openmp(n, n);
-#pragma omp parallel for
+    Matrix A = create_matrix(n, n);
+
+    // for(size_t i = 0; i < n; ++i)
+    // {
+    //     printf("i: %zu ", i);
+    //     work_task* task = create_task(NULL, &A, i, xn, create_matrix_helper);
+    //     pool_enqueue(pool, task, 1);
+    // }
+
+    // pool_wait(pool);
+
     for(size_t i = 0; i < n; ++i)
     {
+        // printf("i: %zu", i);
         // центр
         A.data[i][i] = -4.0;
 
@@ -83,21 +126,48 @@ Matrix cholesky(Matrix* A, int n)
 
     for(int j = 0; j < n; j++)
     {
-        double s = 0;
+        // Compute diagonal element sequentially
+        double s = 0.0;
         for(int k = 0; k < j; k++)
         {
             s += L.data[j][k] * L.data[j][k];
         }
         L.data[j][j] = sqrt(A->data[j][j] - s);
-#pragma omp parallel for
-        for(int i = j + 1; i < n; i++)
+
+        // Parallelize column computation using pthreads
+        int rows_remaining = n - j - 1;
+        if(rows_remaining > 0)
         {
-            double s = 0;
-            for(int k = 0; k < j; k++)
+            int chunk_size = rows_remaining / NUM_THREADS;
+            int extra = rows_remaining % NUM_THREADS;
+            int current_start = j + 1;
+
+            // Create threads
+            for(int t = 0; t < NUM_THREADS; t++)
             {
-                s += L.data[i][k] * L.data[j][k];
+                int thread_rows = chunk_size + (t < extra ? 1 : 0);
+                if(thread_rows > 0)
+                {
+                    thread_args[t] =
+                        (thread_data){.j = j,
+                                      .L = &L,
+                                      .A = A,
+                                      .start_i = current_start,
+                                      .end_i = current_start + thread_rows};
+                    pthread_create(&threads[t], NULL, compute_column,
+                                   &thread_args[t]);
+                    current_start += thread_rows;
+                }
             }
-            L.data[i][j] = (1.0 / L.data[j][j] * (A->data[i][j] - s));
+
+            // Join threads
+            for(int t = 0; t < NUM_THREADS; t++)
+            {
+                if(thread_args[t].end_i > thread_args[t].start_i)
+                {
+                    pthread_join(threads[t], NULL);
+                }
+            }
         }
     }
     return L;
@@ -294,8 +364,10 @@ void errByEpsPcgChol(double a, double b, double c, double d, double h)
     free_vector(zeros);
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    printf("threads: %i", NUM_THREADS);
+
     double a = 0;
     double b = 1.625;
     double c = 0;
