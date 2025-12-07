@@ -217,39 +217,31 @@ void errByEpsPcgChol(double a, double b, double c, double d, double h)
     Vector B = F(&x, &y);
     int n = (x.size - 2) * (y.size - 2);
     Matrix A = generate_five_diag(x.size - 2, y.size - 2);
-    printf("%zu, %zu, %i, %i, %i", A.cols, A.rows, B.size, x.size, y.size);
+    printf("%zu, %zu, %i, %i, %i\n", A.cols, A.rows, B.size, x.size, y.size);
     scalar_mul_self(A, -1);
 
     scalar_vector_mult_self(&B, -1);
 
-    printf("----\n");
+    // printf("----\n");
 
-    FILE* file = fopen("pcgCholErr.txt", "w");
     Matrix L = cholesky(&A, A.cols);
     Matrix Lt = transpose(L);
     Vector zeros = create_vector(n);
-    for(int i = 1; i <= 10; ++i)
-    {
-        double eps = pow(10, -i);
-        double relres = 0;
-        int count = 0;
+    int i = 3;
 
-        Vector Sol =
-            pcgPreconditioned(&A, &B, &zeros, eps, &relres, &count, &L, &Lt);
-        printf(", iter = %i\n", count);
-        double max = vectors_max_diff(&us, &Sol);
-        fprintf(file, "%.15f %.15f\n", eps, max);
-        printf("%.15f %.15f\n", eps, max);
-        if(i == 100)
-        {
-            for(int j = 0; j < us.size; ++j)
-            {
-                printf("%.5f %.5f\n", us.data[j], Sol.data[j]);
-            }
-        }
-        free_vector(Sol);
-    }
-    fclose(file);
+    double eps = pow(10, -i);
+    double relres = 0;
+    int count = 0;
+
+    Vector Sol =
+        pcgPreconditioned(&A, &B, &zeros, eps, &relres, &count, &L, &Lt);
+
+    double max = vectors_max_diff(&us, &Sol);
+
+    printf(", iter = %i, eps = %.15f, max_comp_diff =  %.15f\n", count, eps,
+           max);
+
+    free_vector(Sol);
     free_vector(x);
     free_vector(y);
     free_vector(us);
@@ -267,10 +259,8 @@ int main()
     double c = 0;
     double d = 1.625;
     double h = 0.025;
-    printf("----------------------------------------------------\n");
 
     errByEpsPcgChol(a, b, c, d, h);
-    printf("---\n");
 
     return 0;
 }

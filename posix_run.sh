@@ -1,1 +1,1 @@
-time; ./build/main_executable_posix 32
+time; ./build/main_executable_posix 4

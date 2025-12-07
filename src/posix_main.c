@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <omp.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 
 typedef struct
@@ -12,6 +13,10 @@ typedef struct
     int start_i;
     int end_i;
 } thread_data;
+
+pthread_t* threads = NULL;
+thread_data* thread_args = NULL;
+int NUM_THREADS = 2;
 
 void* compute_column(void* arg)
 {
@@ -31,10 +36,6 @@ void* compute_column(void* arg)
     }
     pthread_exit(NULL);
 }
-
-const int NUM_THREADS = 4; // Adjust based on your system
-pthread_t threads[NUM_THREADS];
-thread_data thread_args[NUM_THREADS];
 
 static Matrix create_matrix_openmp(size_t rows, size_t cols)
 {
@@ -124,8 +125,20 @@ Matrix cholesky(Matrix* A, int n)
     assert(A->cols == A->rows);
     assert(A->cols == n);
 
+    pthread_t threads[NUM_THREADS];
+    thread_data thread_args[NUM_THREADS];
+
+    bool thread_created[NUM_THREADS]; // Track which threads were actually
+                                      // created
+
     for(int j = 0; j < n; j++)
     {
+        // Initialize thread tracking for this iteration
+        for(int t = 0; t < NUM_THREADS; t++)
+        {
+            thread_created[t] = false;
+        }
+
         // Compute diagonal element sequentially
         double s = 0.0;
         for(int k = 0; k < j; k++)
@@ -154,16 +167,19 @@ Matrix cholesky(Matrix* A, int n)
                                       .A = A,
                                       .start_i = current_start,
                                       .end_i = current_start + thread_rows};
-                    pthread_create(&threads[t], NULL, compute_column,
-                                   &thread_args[t]);
+                    if(pthread_create(&threads[t], NULL, compute_column,
+                                      &thread_args[t]) == 0)
+                    {
+                        thread_created[t] = true;
+                    }
                     current_start += thread_rows;
                 }
             }
 
-            // Join threads
+            // Join only threads that were actually created
             for(int t = 0; t < NUM_THREADS; t++)
             {
-                if(thread_args[t].end_i > thread_args[t].start_i)
+                if(thread_created[t])
                 {
                     pthread_join(threads[t], NULL);
                 }
@@ -172,7 +188,6 @@ Matrix cholesky(Matrix* A, int n)
     }
     return L;
 }
-
 Vector solve_gauss_reverse(Matrix* U, Vector* b)
 {
     int n = U->rows;
@@ -321,39 +336,30 @@ void errByEpsPcgChol(double a, double b, double c, double d, double h)
     Vector B = F(&x, &y);
     int n = (x.size - 2) * (y.size - 2);
     Matrix A = generate_five_diag(x.size - 2, y.size - 2);
-    printf("%zu, %zu, %i, %i, %i", A.cols, A.rows, B.size, x.size, y.size);
+    // printf("%zu, %zu, %i, %i, %i", A.cols, A.rows, B.size, x.size, y.size);
     scalar_mul_self(A, -1);
 
     scalar_vector_mult_self(&B, -1);
 
-    printf("----\n");
+    // printf("----\n");
 
-    FILE* file = fopen("pcgCholErr.txt", "w");
     Matrix L = cholesky(&A, A.cols);
     Matrix Lt = transpose(L);
     Vector zeros = create_vector(n);
-    for(int i = 1; i <= 10; ++i)
-    {
-        double eps = pow(10, -i);
-        double relres = 0;
-        int count = 0;
+    int i = 3;
 
-        Vector Sol =
-            pcgPreconditioned(&A, &B, &zeros, eps, &relres, &count, &L, &Lt);
-        printf(", iter = %i\n", count);
-        double max = vectors_max_diff(&us, &Sol);
-        fprintf(file, "%.15f %.15f\n", eps, max);
-        printf("%.15f %.15f\n", eps, max);
-        if(i == 100)
-        {
-            for(int j = 0; j < us.size; ++j)
-            {
-                printf("%.5f %.5f\n", us.data[j], Sol.data[j]);
-            }
-        }
-        free_vector(Sol);
-    }
-    fclose(file);
+    double eps = pow(10, -i);
+    double relres = 0;
+    int count = 0;
+
+    Vector Sol =
+        pcgPreconditioned(&A, &B, &zeros, eps, &relres, &count, &L, &Lt);
+
+    double max = vectors_max_diff(&us, &Sol);
+    printf("iter = %i, eps = %.15f, max_comp_diff =  %.15f\n", count, eps, max);
+
+    free_vector(Sol);
+
     free_vector(x);
     free_vector(y);
     free_vector(us);
@@ -366,17 +372,41 @@ void errByEpsPcgChol(double a, double b, double c, double d, double h)
 
 int main(int argc, char** argv)
 {
-    printf("threads: %i", NUM_THREADS);
+    if(argc < 2)
+    {
+        printf("Usage: %s <num_threads>\n", argv[0]);
+        return 1;
+    }
+
+    // Convert argument to integer
+    NUM_THREADS = atoi(argv[1]);
+    if(NUM_THREADS <= 0)
+    {
+        printf("Error: Number of threads must be positive\n");
+        return 1;
+    }
+
+    printf("threads: %i\n", NUM_THREADS);
+
+    // Allocate memory for threads and thread_data
+    threads = (pthread_t*)malloc(NUM_THREADS * sizeof(pthread_t));
+    thread_args = (thread_data*)malloc(NUM_THREADS * sizeof(thread_data));
+
+    if(!threads || !thread_args)
+    {
+        printf("Error: Memory allocation failed\n");
+        free(threads);
+        free(thread_args);
+        return 1;
+    }
 
     double a = 0;
     double b = 1.625;
     double c = 0;
     double d = 1.625;
     double h = 0.025;
-    printf("----------------------------------------------------\n");
 
     errByEpsPcgChol(a, b, c, d, h);
-    printf("---\n");
 
     return 0;
 }
