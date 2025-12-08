@@ -81,7 +81,7 @@ def generate_five_diag_mpi(xn, yn, comm):
             A.data[i, i + 1] = -1.0
     
     A.win.Fence()
-    print(f"Process with rank: {rank} ended matrix creation")
+    # print(f"Process with rank: {rank} ended matrix creation")
     return A
 
 def cholesky_mpi(A, n, comm):

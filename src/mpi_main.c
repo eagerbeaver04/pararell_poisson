@@ -174,7 +174,7 @@ Matrix_MPI generate_five_diag_mpi(size_t xn, size_t yn, MPI_Comm comm)
     // Synchronize to ensure all processes have finished writing
     MPI_Win_fence(0, A.win_buf);
 
-    printf("process with rank: %i ended matrix creation", rank);
+    // printf("process with rank: %i ended matrix creation", rank);
     return A;
 }
 

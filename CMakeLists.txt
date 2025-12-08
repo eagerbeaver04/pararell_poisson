@@ -34,11 +34,13 @@ target_compile_options(main_executable_mpi PRIVATE ${COMMON_COMPILE_OPTIONS})
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
+SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pthread")
 
 add_executable(main_executable_posix src/posix_main.c)
 target_link_libraries(main_executable_posix PRIVATE 
     m
     pthread 
+    lpthread
     Threads::Threads
     ${CMAKE_THREAD_LIBS_INIT}
 )

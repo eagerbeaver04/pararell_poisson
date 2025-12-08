@@ -8,10 +8,13 @@
 
 module purge
 module load mpi/openmpi/4.1.6/gcc/11
+module load python/3.11
 PYTHON_BIN=/opt/software/python/3.11.8/bin/python3
 module load dev/cmake/3.23.1
 THREADS=(2 4 8 16 48)
 PROCS=(2 4 16 28)
+
+export OMPI_MCA_btl="tcp,self"
 
 echo "===== Job Info ====="
 echo "Date              = $(date)"
