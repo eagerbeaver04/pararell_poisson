@@ -23,7 +23,7 @@ class SharedMatrix:
         self.data = np.ndarray(buffer=buf, shape=(rows, cols), dtype=np.float64)
         
         # Initialize to zero on rank 0
-        if comm.Get_rank() == 0:
+        if self.comm.Get_rank() == 0:
             self.data.fill(0.0)
         
         self.win.Fence()
@@ -293,7 +293,7 @@ def err_by_eps_pcg_chol(a, b, c, d, h, comm):
     L_mpi = cholesky_mpi(A_mpi, A_mpi.cols, comm)
     
     if rank == 0:
-        print("Starting PCG tests")
+        # print("Starting PCG tests")
         
         # Get data as numpy arrays
         A = A_mpi.data
@@ -305,41 +305,36 @@ def err_by_eps_pcg_chol(a, b, c, d, h, comm):
         
         n = len(b_vec)
         
-        # Test different tolerances
-        with open("pcgCholErr.txt", "w") as file:
-            for i in range(1, 11):
-                eps = 10 ** (-i)
-                x0 = np.zeros(n)
+        i = 3
+        eps = 10 ** (-i)
+        x0 = np.zeros(n)
+        
+        # Run PCG
+        sol, iterations, relres = pcg_preconditioned(
+            A, b_vec, x0, eps, 
+            L=L, Lt=L.T
+        )
+        
+        # Calculate error
+        max_err = np.max(np.abs(u_exact - sol))
+        
+        # file.write(f"{eps:.15f} {max_err:.15f}\n")
+        print(f"eps={eps:.1e}, iterations={iterations}, max_comp_diff={max_err:.3e}")
                 
-                # Run PCG
-                sol, iterations, relres = pcg_preconditioned(
-                    A, b_vec, x0, eps, 
-                    L=L, Lt=L.T
-                )
-                
-                # Calculate error
-                max_err = np.max(np.abs(u_exact - sol))
-                
-                file.write(f"{eps:.15f} {max_err:.15f}\n")
-                print(f"eps={eps:.1e}, iterations={iterations}, max_err={max_err:.3e}, relres={relres:.3e}")
-                
-                # Print solution for debugging at i=10
-                if i == 10:
-                    for j in range(min(10, len(u_exact))):
-                        print(f"u[{j}]={u_exact[j]:.5f}, sol[{j}]={sol[j]:.5f}")
-    
+
     # Free shared memory
     free_shared_matrix(A_mpi)
     free_shared_matrix(L_mpi)
     
-    if rank == 0:
-        print("---\n")
+    # if rank == 0:
+    #     print("---\n")
 
 def main():
     """Main MPI function"""
     comm = MPI.COMM_WORLD
-    rank = comm.Get_rank()
-    size = comm.Get_size()
+    shmcomm = comm.Split_type(MPI.COMM_TYPE_SHARED, 0, MPI.INFO_NULL)
+    rank = shmcomm.Get_rank()
+    size = shmcomm.Get_size()
     
     if rank == 0:
         print(f"Starting MPI program with {size} processes")
@@ -349,10 +344,10 @@ def main():
     c, d = 0, 1.625
     h = 0.025
     
-    comm.Barrier()
+    shmcomm.Barrier()
     
     # Run the main test
-    err_by_eps_pcg_chol(a, b, c, d, h, comm)
+    err_by_eps_pcg_chol(a, b, c, d, h, shmcomm)
     
     if rank == 0:
         print("Program completed successfully")

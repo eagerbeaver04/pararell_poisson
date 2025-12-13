@@ -19,4 +19,4 @@ echo $SLURM_NTASKS
 echo $PBS_NP  
 echo $OMPI_COMM_WORLD_SIZE
 
-time mpiexec --mca orte_base_help_aggregate 0  -n $1 ./build/main_executable_mpi
+time mpirun -np $1 ./build/main_executable_mpi

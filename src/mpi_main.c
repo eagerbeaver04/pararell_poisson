@@ -31,16 +31,21 @@ static Matrix_MPI create_shared_matrix(size_t rows, size_t cols, MPI_Comm comm)
     size_t total = rows * cols;
     MPI_Aint buf_size = total * sizeof(double);
 
-    // Allocate shared memory window
-    MPI_Win_allocate_shared(buf_size, sizeof(double), MPI_INFO_NULL, comm,
-                            &m.buf, &m.win_buf);
-
     // Get the base address of rank 0's window
     MPI_Aint sz;
     int disp;
     double* base_ptr;
+    // // Allocate shared memory window
+    // MPI_Win_allocate_shared(buf_size, sizeof(double), MPI_INFO_NULL, comm,
+    //                         &m.buf, &m.win_buf);
 
-    // Query rank 0's address to use as the common base
+    // // Query rank 0's address to use as the common base
+    // MPI_Win_shared_query(m.win_buf, 0, &sz, &disp, &base_ptr);
+
+    MPI_Aint mysize = (rank == 0) ? buf_size : 0;
+    MPI_Win_allocate_shared(mysize, sizeof(double), MPI_INFO_NULL, comm, &m.buf,
+                            &m.win_buf);
+
     MPI_Win_shared_query(m.win_buf, 0, &sz, &disp, &base_ptr);
 
     // Use the common base pointer for all processes
@@ -79,7 +84,6 @@ static void free_shared_matrix(Matrix_MPI* mat, MPI_Comm comm)
 
     if(mat->win_buf != MPI_WIN_NULL)
     {
-        MPI_Win_fence(0, mat->win_buf);
         MPI_Win_free(&mat->win_buf);
     }
 
@@ -235,7 +239,7 @@ Matrix_MPI cholesky_mpi(Matrix_MPI* A, int n, MPI_Comm comm)
         MPI_Barrier(comm);
 
         // CRITICAL: Force memory consistency across all processes
-        MPI_Win_fence(MPI_MODE_NOPUT | MPI_MODE_NOPRECEDE, L.win_buf);
+        // MPI_Win_fence(MPI_MODE_NOPUT | MPI_MODE_NOPRECEDE, L.win_buf);
 
         // Synchronize to ensure L[j][j] is visible to all
         MPI_Win_fence(0, L.win_buf);
@@ -435,14 +439,13 @@ void errByEpsPcgChol(double a, double b, double c, double d, double h,
                      MPI_Comm comm)
 {
     int rank, size;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(comm, &rank);
+    MPI_Comm_size(comm, &size);
 
     Vector x = linspace(a, b, (b - a) / h + 1);
     Vector y = linspace(c, d, (d - c) / h + 1);
-    Matrix_MPI A_MPI =
-        generate_five_diag_mpi(x.size - 2, y.size - 2, MPI_COMM_WORLD);
-    Matrix_MPI L_MPI = cholesky_mpi(&A_MPI, A_MPI.cols, MPI_COMM_WORLD);
+    Matrix_MPI A_MPI = generate_five_diag_mpi(x.size - 2, y.size - 2, comm);
+    Matrix_MPI L_MPI = cholesky_mpi(&A_MPI, A_MPI.cols, comm);
     if(rank == 0)
     {
         Matrix L = {L_MPI.rows, L_MPI.cols, L_MPI.data, L_MPI.buf};
@@ -497,8 +500,11 @@ int main(int argc, char** argv)
     MPI_Status status;
 
     MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm shmcomm;
+    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL,
+                        &shmcomm);
+    MPI_Comm_rank(shmcomm, &rank);
+    MPI_Comm_size(shmcomm, &size);
 
     if(rank == 0)
     {
@@ -511,9 +517,9 @@ int main(int argc, char** argv)
     double d = 1.625;
     double h = 0.025;
     // printf("----------------------------------------------------\n");
-    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Barrier(shmcomm);
 
-    errByEpsPcgChol(a, b, c, d, h, MPI_COMM_WORLD);
+    errByEpsPcgChol(a, b, c, d, h, shmcomm);
 
     MPI_Finalize();
 

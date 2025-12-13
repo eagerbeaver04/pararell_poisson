@@ -40,7 +40,6 @@ add_executable(main_executable_posix src/posix_main.c)
 target_link_libraries(main_executable_posix PRIVATE 
     m
     pthread 
-    lpthread
     Threads::Threads
     ${CMAKE_THREAD_LIBS_INIT}
 )

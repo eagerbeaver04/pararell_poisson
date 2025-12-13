@@ -26,5 +26,6 @@ ssh -i ~/.ssh/"$KEY" "$SERVER" "mkdir -p ~/$REMOTE"
 scp -r -i ~/.ssh/"$KEY" "$LOCAL"/src "$SERVER":~/"$REMOTE"/
 scp -i ~/.ssh/"$KEY" "$LOCAL"/*.sh "$SERVER":~/"$REMOTE"/
 scp -i ~/.ssh/"$KEY" "$LOCAL"/*.slurm "$SERVER":~/"$REMOTE"/
+scp -i ~/.ssh/"$KEY" "$LOCAL"/CMakeLists.txt "$SERVER":~/"$REMOTE"/
 
 echo "Done"

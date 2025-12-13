@@ -3,7 +3,7 @@
 #SBATCH --output=poisson.out
 #SBATCH --nodes=2
 #SBATCH --cpus-per-task=1
-#SBATCH --time=01:00:00
+#SBATCH --time=05:00:00
 #SBATCH --partition=cascade
 
 module purge
@@ -12,8 +12,9 @@ module load python/3.11
 PYTHON_BIN=/opt/software/python/3.11.8/bin/python3
 pip install mpi4py
 module load dev/cmake/3.23.1
-THREADS=(2 4 8 16 48)
-PROCS=(2 4 16 28)
+THREADS=(2 4 8 16 28 48)
+PROCS=(2 4 8 16 28 56 84 112)
+
 
 export OMPI_MCA_btl="tcp,self"
 
@@ -26,11 +27,10 @@ echo "Tasks Allocated   = $SLURM_NTASKS"
 echo "CPUs per Task     = $SLURM_CPUS_PER_TASK"
 echo "==================="
 
-# cd pararell_poisson
-
 # ----------------------------
 # Compile all programs
 # ----------------------------
+rm -rf build
 mkdir build
 cd build
 cmake ..
@@ -38,10 +38,8 @@ make
 cd ../
 
 # ----------------------------
-# Build posix
+# Run posix
 # ----------------------------
-gcc -O2 -pthread -o posix_run_exec src/posix_main.c -lm
-
 echo
 echo "=== RUN pthreads ==="
 for t in "${THREADS[@]}"; do
@@ -50,7 +48,7 @@ for t in "${THREADS[@]}"; do
 done
 
 # ----------------------------
-# Run OpenMP (single node)
+# Run OpenMP
 # ----------------------------
 echo
 echo "=== RUN OpenMP ==="
@@ -60,7 +58,7 @@ for t in "${THREADS[@]}"; do
 done
 
 # ----------------------------
-# Run MPI C (multi-node)
+# Run MPI C
 # ----------------------------
 echo
 echo "=== RUN MPI C ==="
@@ -70,7 +68,7 @@ for p in "${PROCS[@]}"; do
 done
 
 # ----------------------------
-# Run MPI Python (multi-node)
+# Run MPI Python
 # ----------------------------
 echo
 echo "=== RUN MPI Python ==="
